@@ -10,6 +10,40 @@ $(document).ready(function () {
 });
 
 // 以下为函数定义
+//function toggle_settings_dialog() {
+//    if ($("#settings-dialog").css("display") === "none") {
+//        $("#api-key").val(config.apiKey);
+//        $("#user-id").val(config.userId);
+//        $("#password").val(config.password);
+//
+//        let top = $(".content").offset().top;
+//        let left = $(".content").offset().left;
+//        let width = $(".content").width();
+//        let height = $(".content").height() + $(".input-area").height();
+//        $("#settings-dialog").css("top", top);
+//        $("#settings-dialog").css("left", left);
+//        $("#settings-dialog").css("width", width);
+//        $("#settings-dialog").css("height", height);
+//    } else {
+//        // 获取设置值
+//        console.log("关闭设置");
+//        let user_change_flag = false;
+//        if (config.userId !== $("#user-id").val() || config.password !== $("#password").val()) {
+//            user_change_flag = true;
+//        }
+//        config.apiKey = $("#api-key").val();
+//        config.userId = $("#user-id").val();
+//        config.password = $("#password").val();
+//        // 保存设置
+//        localStorage.setItem("config", JSON.stringify(config));
+//        if (user_change_flag) {
+//            // 刷新页面
+//            location.reload();
+//        }
+//    }
+//    $("#settings-dialog").toggle();
+//}
+
 function toggle_settings_dialog() {
     if ($("#settings-dialog").css("display") === "none") {
         $("#api-key").val(config.apiKey);
@@ -25,19 +59,30 @@ function toggle_settings_dialog() {
         $("#settings-dialog").css("width", width);
         $("#settings-dialog").css("height", height);
     } else {
-        // 获取设置值
-        console.log("关闭设置");
+        // 获取设置值以及检测是否是管理员账号密码
         let user_change_flag = false;
+        let isAdminLogin = $("#user-id").val() === "admin" && $("#password").val() === "adminpass"; // 假定管理员账号ID和密码均为admin
+
         if (config.userId !== $("#user-id").val() || config.password !== $("#password").val()) {
             user_change_flag = true;
         }
         config.apiKey = $("#api-key").val();
         config.userId = $("#user-id").val();
         config.password = $("#password").val();
+
         // 保存设置
         localStorage.setItem("config", JSON.stringify(config));
-        if (user_change_flag) {
-            // 刷新页面
+
+        if (isAdminLogin) {
+            // 如果是管理员账号，则显示用户注册对话框
+            $("#user-registration-dialog").css({
+                "top": top , // 位于设置对话框的下方
+                "left": left,
+                "width": width,
+                "display": "block"
+            });
+        } else if (user_change_flag) {
+            // 若非管理员登录但用户信息有改变，则刷新页面
             location.reload();
         }
     }
@@ -78,3 +123,28 @@ function toggle_chat_setting_dialog() {
     $("#chat-setting-dialog").toggle();
 }
 
+function registerUser() {
+    // 获取输入的新用户名和密码
+    let newUsername = $("#register-username").val();
+    let newPassword = $("#register-password").val();
+
+    // 发送到后端注册新用户，这里使用POST请求
+    $.ajax({
+        url: "/registerUser", // 后端路由地址需要相应配置
+        method: "POST",
+        contentType: "application/json; charset=utf-8",
+        data: JSON.stringify({username: newUsername, password: newPassword}),
+        dataType: "json",
+        success: function(response) {
+            if (response.success) {
+                alert("新用户注册成功！");
+                $("#user-registration-dialog").hide();
+            } else {
+                alert("注册失败：" + response.message);
+            }
+        },
+        error: function() {
+            alert("注册请求失败，请稍后再试");
+        }
+    });
+}

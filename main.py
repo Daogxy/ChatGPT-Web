@@ -59,7 +59,7 @@ ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", default=ADMIN_PASSWORD)  # 如果�
 if ADMIN_PASSWORD == "":
     ADMIN_PASSWORD = PASSWORD  # 如果ADMIN_PASSWORD为空，则使用PASSWORD
 
-STREAM_FLAG = True  # 是否开启流式推送
+STREAM_FLAG = False  # 是否开启流式推送
 USER_DICT_FILE = "all_user_dict_v3.pkl"  # 用户信息存储文件（包含版本）
 lock = threading.Lock()  # 用于线程锁
 
@@ -94,8 +94,8 @@ def get_response_from_ChatGPT_API(message_context, apikey,
         "presence_penalty": presence_penalty,
         "max_tokens": max_tokens
     }
-    url = "https://api.openai.com/v1/chat/completions"
-
+    # url = "https://api.openai.com/v1/chat/completions"
+    url = "https://api.chatanywhere.tech/v1/chat/completions"
     try:
         response = requests.post(url, headers=header, data=json.dumps(data))
         response = response.json()
@@ -560,7 +560,9 @@ def new_user_dict(user_id, send_time):
     chat_id = str(uuid.uuid1())
     user_dict = {"chats": {chat_id: new_chat_dict(user_id, "默认对话", send_time)},
                  "selected_chat_id": chat_id,
-                 "default_chat_id": chat_id}
+                 "default_chat_id": chat_id,
+                 "word_limit": 1000  # 初始化用户可用字数为1000
+                  }
 
     user_dict['chats'][chat_id]['messages_history'].insert(1, {"role": "assistant",
                                                                "content": "创建新的用户id成功，请牢记该id"})
@@ -764,24 +766,41 @@ def return_message():
             if not STREAM_FLAG:
                 if save_message:
                     messages_history.append(messages[-1])
-                response = get_response_from_ChatGPT_API(messages, apikey)
-                if save_message:
-                    messages_history.append({"role": "assistant", "content": response})
-                asyncio_run(save_all_user_dict())
+                    # 第一次调用API，请求将聊天数据缩写
+                if user_info["word_limit"] <= 0:
+                    return "抱歉，您的字数已用完。"
+                else:
+                    summary_prefix = "将下述文字缩写为几句话：/n"
+                    summary_request = summary_prefix + send_message
+                    summary_response = get_response_from_ChatGPT_API([{"role": "user", "content": summary_request}],
+                                                                     apikey)
 
-                logger.info(f"用户({session.get('user_id')})得到的回复消息:{response[:40]}...")
-                # 异步存储all_user_dict
-                asyncio_run(save_all_user_dict())
-                return response
+                    # 第二次调用API，请求将缩写后的数据扩写
+                    expansion_prefix = "扩写下述文字：/n"
+                    expansion_request = expansion_prefix + summary_response
+                    response = get_response_from_ChatGPT_API([{"role": "user", "content": expansion_request}],
+                                                                       apikey)
+                    # response = get_response_from_ChatGPT_API(messages, apikey)
+                    if save_message:
+                        messages_history.append({"role": "assistant", "content": response})
+                    asyncio_run(save_all_user_dict())
+
+                    logger.info(f"用户({session.get('user_id')})得到的回复消息:{response[:40]}...")
+                    # 异步存储all_user_dict
+                    asyncio_run(save_all_user_dict())
+                    user_info["word_limit"] -= len(send_message)
+                    return response
             else:
                 if save_message:
                     messages_history.append(messages[-1])
                 asyncio_run(save_all_user_dict())
                 if not save_message:
                     messages_history = []
+
                 generate = get_response_stream_generate_from_ChatGPT_API(messages, apikey, messages_history,
                                                                          model=model, temperature=temperature,
                                                                          max_tokens=max_tokens)
+
                 return app.response_class(generate(), mimetype='application/json')
 
 
@@ -814,28 +833,28 @@ def select_chat():
     return {"code": 200, "msg": "选择聊天对象成功"}
 
 #可以注释掉，可以放到自动转到指定的对话框
-@app.route('/newChat', methods=['GET'])
-def new_chat():
-    """
-    新建聊天对象
-    :return:
-    """
-    name = request.args.get("name")
-    time = request.args.get("time")
-    new_chat_id = request.args.get("chat_id")
-    check_session(session)
-    if not check_user_bind(session):
-        return {"code": -1, "msg": "请先创建或输入已有用户id"}
-    user_id = session.get('user_id')
-    user_info = get_user_info(user_id)
-    # new_chat_id = str(uuid.uuid1())
-    user_info['selected_chat_id'] = new_chat_id
-    user_info['chats'][new_chat_id] = new_chat_dict(user_id, name, time)
-    user_info["chat_sticky_list"].insert(1, new_chat_id)
-    logger.info("新建聊天对象")
-    asyncio_run(save_all_user_dict())
-    return {"code": 200, "data": {"name": name, "id": new_chat_id, "selected": True,
-                                  "messages_total": len(user_info['chats'][new_chat_id]['messages_history'])}}
+# @app.route('/newChat', methods=['GET'])
+# def new_chat():
+#     """
+#     新建聊天对象
+#     :return:
+#     """
+#     name = request.args.get("name")
+#     time = request.args.get("time")
+#     new_chat_id = request.args.get("chat_id")
+#     check_session(session)
+#     if not check_user_bind(session):
+#         return {"code": -1, "msg": "请先创建或输入已有用户id"}
+#     user_id = session.get('user_id')
+#     user_info = get_user_info(user_id)
+#     # new_chat_id = str(uuid.uuid1())
+#     user_info['selected_chat_id'] = new_chat_id
+#     user_info['chats'][new_chat_id] = new_chat_dict(user_id, name, time)
+#     user_info["chat_sticky_list"].insert(1, new_chat_id)
+#     logger.info("新建聊天对象")
+#     asyncio_run(save_all_user_dict())
+#     return {"code": 200, "data": {"name": name, "id": new_chat_id, "selected": True,
+#                                   "messages_total": len(user_info['chats'][new_chat_id]['messages_history'])}}
 
 
 @app.route('/deleteHistory', methods=['GET'])
